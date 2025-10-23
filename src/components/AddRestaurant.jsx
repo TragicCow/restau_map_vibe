@@ -1,68 +1,98 @@
-import React, { useState } from 'react';
-import { X, MapPin, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, MapPin, Search, Loader2 } from 'lucide-react';
 
 const MAPBOX_TOKEN = 'pk.eyJ1IjoidHJhZ2ljY293IiwiYSI6ImNtaDJma3ByajBmMjkyaXI1Y3BpNG1tMjcifQ.UwmYnBz3fczCfJopj-oBHA';
 
-const AddRestaurant = ({ isOpen, onClose, onAdd }) => {
+const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin }) => {
+  const [mode, setMode] = useState('search'); // 'search' or 'pin'
   const [formData, setFormData] = useState({
     name: '',
     address: '',
     cuisine: ''
   });
-  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState(null);
   const [error, setError] = useState('');
+
+  // Update selected location when pin is dropped
+  useEffect(() => {
+    if (droppedPin) {
+      setSelectedLocation(droppedPin);
+    }
+  }, [droppedPin]);
+
+  // Search address with autocomplete
+  const handleAddressSearch = async (query) => {
+    setFormData({ ...formData, address: query });
+    
+    if (query.length < 3) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&limit=5&types=address,poi`
+      );
+      const data = await response.json();
+      setSuggestions(data.features || []);
+      setShowSuggestions(true);
+    } catch (error) {
+      console.error('Geocoding error:', error);
+    }
+  };
+
+  // Select address from suggestions
+  const selectAddress = (suggestion) => {
+    setFormData({ ...formData, address: suggestion.place_name });
+    setSelectedLocation({
+      lng: suggestion.center[0],
+      lat: suggestion.center[1]
+    });
+    setShowSuggestions(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setIsGeocoding(true);
 
-    try {
-      // Geocode the address using Mapbox Geocoding API
-      const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(formData.address)}.json?access_token=${MAPBOX_TOKEN}&limit=1`
-      );
-      
-      const data = await response.json();
-
-      if (!data.features || data.features.length === 0) {
-        setError('Address not found. Please try a different address.');
-        setIsGeocoding(false);
-        return;
-      }
-
-      const [lng, lat] = data.features[0].center;
-
-      const newRestaurant = {
-        id: Date.now(),
-        name: formData.name,
-        address: formData.address,
-        cuisine: formData.cuisine,
-        location: { lat, lng },
-        reviews: []
-      };
-
-      onAdd(newRestaurant);
-      
-      // Reset form
-      setFormData({ name: '', address: '', cuisine: '' });
-      onClose();
-      
-    } catch (err) {
-      setError('Failed to geocode address. Please try again.');
-      console.error('Geocoding error:', err);
-    } finally {
-      setIsGeocoding(false);
+    if (!formData.name || !formData.cuisine) {
+      setError('Please fill in all required fields');
+      return;
     }
+
+    if (!selectedLocation) {
+      setError('Please select a location (drop pin or search address)');
+      return;
+    }
+
+    const newRestaurant = {
+      id: Date.now(),
+      name: formData.name,
+      address: mode === 'search' ? formData.address : `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`,
+      cuisine: formData.cuisine,
+      lng: selectedLocation.lng,
+      lat: selectedLocation.lat,
+      reviews: []
+    };
+
+    onAdd(newRestaurant);
+    
+    // Reset form
+    setFormData({ name: '', address: '', cuisine: '' });
+    setSelectedLocation(null);
+    onClose();
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black bg-opacity-50 animate-fadeIn">
-      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl transform transition-transform duration-300 ease-out animate-slideUp">
+      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl transform transition-transform duration-300 ease-out animate-slideUp max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b">
+        <div className="sticky top-0 bg-white flex items-center justify-between p-6 border-b z-10">
           <h2 className="text-2xl font-bold text-gray-800">Add Restaurant</h2>
           <button
             onClick={onClose}
@@ -75,8 +105,95 @@ const AddRestaurant = ({ isOpen, onClose, onAdd }) => {
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
+            </div>
+          )}
+
+          {/* Mode Tabs */}
+          <div className="flex gap-2 bg-gray-100 rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => setMode('search')}
+              className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors flex items-center justify-center gap-2 ${
+                mode === 'search'
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-gray-600'
+              }`}
+            >
+              <Search size={16} />
+              Search Address
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('pin');
+                onEnableDropPin();
+              }}
+              className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors flex items-center justify-center gap-2 ${
+                mode === 'pin'
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-gray-600'
+              }`}
+            >
+              <MapPin size={16} />
+              Drop Pin
+            </button>
+          </div>
+
+          {/* Location Input */}
+          {mode === 'search' ? (
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Address *
+              </label>
+              <input
+                type="text"
+                value={formData.address}
+                onChange={(e) => handleAddressSearch(e.target.value)}
+                onFocus={() => {
+                  if (suggestions.length > 0) setShowSuggestions(true);
+                }}
+                placeholder="Start typing address..."
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-lg"
+              />
+              
+              {/* Address Suggestions */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {suggestions.map((suggestion, index) => (
+                    <div
+                      key={index}
+                      onClick={() => selectAddress(suggestion)}
+                      className="p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-0"
+                    >
+                      <div className="font-medium text-sm">{suggestion.text}</div>
+                      <div className="text-xs text-gray-500">{suggestion.place_name}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              {selectedLocation ? (
+                <div className="text-center">
+                  <MapPin className="inline text-primary mb-2" size={24} />
+                  <div className="text-sm text-gray-600">
+                    Pin dropped at:
+                  </div>
+                  <div className="font-mono text-xs text-gray-500 mt-1">
+                    {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center text-gray-600">
+                  <MapPin className="inline text-gray-400 mb-2" size={24} />
+                  <div className="text-sm">
+                    Tap anywhere on the map to drop a pin
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -96,59 +213,24 @@ const AddRestaurant = ({ isOpen, onClose, onAdd }) => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Address *
-            </label>
-            <div className="relative">
-              <MapPin className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                required
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-lg"
-                placeholder="e.g., 123 Main St, New York, NY"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
               Cuisine Type *
             </label>
-            <select
+            <input
+              type="text"
               required
               value={formData.cuisine}
               onChange={(e) => setFormData({ ...formData, cuisine: e.target.value })}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-lg"
-            >
-              <option value="">Select cuisine...</option>
-              <option value="Italian">Italian</option>
-              <option value="Japanese">Japanese</option>
-              <option value="Chinese">Chinese</option>
-              <option value="Mexican">Mexican</option>
-              <option value="Indian">Indian</option>
-              <option value="American">American</option>
-              <option value="French">French</option>
-              <option value="Thai">Thai</option>
-              <option value="Mediterranean">Mediterranean</option>
-              <option value="Korean">Korean</option>
-              <option value="Other">Other</option>
-            </select>
+              placeholder="e.g., Italian, Mexican, Asian"
+            />
           </div>
 
           <button
             type="submit"
-            disabled={isGeocoding}
-            className="w-full bg-primary text-white py-4 rounded-lg font-semibold text-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            disabled={!selectedLocation}
+            className="w-full bg-primary text-white py-4 rounded-lg font-semibold text-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isGeocoding ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Finding location...
-              </>
-            ) : (
-              'Add Restaurant'
-            )}
+            Add Restaurant
           </button>
         </form>
       </div>

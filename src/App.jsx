@@ -10,11 +10,15 @@ function App() {
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showListView, setShowListView] = useState(false);
+  const [dropPinMode, setDropPinMode] = useState(false);
+  const [droppedPin, setDroppedPin] = useState(null);
 
   const handleAddRestaurant = (newRestaurant) => {
     setRestaurants([...restaurants, newRestaurant]);
     // Automatically select the newly added restaurant
     setSelectedRestaurant(newRestaurant);
+    setDropPinMode(false);
+    setDroppedPin(null);
   };
 
   const handleMarkerClick = (restaurant) => {
@@ -42,6 +46,23 @@ function App() {
     setSelectedRestaurant(null);
   };
 
+  const handleMapClick = (location) => {
+    if (dropPinMode) {
+      setDroppedPin(location);
+    }
+  };
+
+  const handleEnableDropPin = () => {
+    setDropPinMode(true);
+    setDroppedPin(null);
+  };
+
+  const handleCloseAddModal = () => {
+    setShowAddModal(false);
+    setDropPinMode(false);
+    setDroppedPin(null);
+  };
+
   return (
     <div className="relative w-full h-screen overflow-hidden">
       {/* Map */}
@@ -49,6 +70,8 @@ function App() {
         restaurants={restaurants} 
         onMarkerClick={handleMarkerClick}
         selectedRestaurant={selectedRestaurant}
+        dropPinMode={dropPinMode}
+        onMapClick={handleMapClick}
       />
 
       {/* Floating Action Buttons */}
@@ -126,8 +149,10 @@ function App() {
       {/* Modals */}
       <AddRestaurant 
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={handleCloseAddModal}
         onAdd={handleAddRestaurant}
+        onEnableDropPin={handleEnableDropPin}
+        droppedPin={droppedPin}
       />
 
       {selectedRestaurant && (

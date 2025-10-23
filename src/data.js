@@ -5,10 +5,8 @@ export const initialRestaurants = [
     name: "Bella Napoli",
     address: "123 Main St, New York, NY",
     cuisine: "Italian",
-    location: {
-      lat: 40.7580,
-      lng: -73.9855
-    },
+    lat: 40.7580,
+    lng: -73.9855,
     reviews: [
       {
         id: 1,
@@ -31,10 +29,8 @@ export const initialRestaurants = [
     name: "Sushi Palace",
     address: "456 Park Ave, New York, NY",
     cuisine: "Japanese",
-    location: {
-      lat: 40.7614,
-      lng: -73.9776
-    },
+    lat: 40.7614,
+    lng: -73.9776,
     reviews: [
       {
         id: 1,

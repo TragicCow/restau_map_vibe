@@ -1,105 +1,185 @@
-import React, { useRef, useEffect } from 'react';
-import mapboxgl from 'mapbox-gl';
+import React, { useRef, useEffect, useState } from 'react';
+import { Search, Locate } from 'lucide-react';
 
-const MAPBOX_TOKEN = 'pk.eyJ1IjoidHJhZ2ljY293IiwiYSI6ImNtaDJma3ByajBmMjkyaXI1Y3BpNG1tMjcifQ.UwmYnBz3fczCfJopj-oBHA';
+// google maps api key from .env
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-const Map = ({ restaurants, onMarkerClick, selectedRestaurant }) => {
+const Map = ({ restaurants, onMarkerClick, selectedRestaurant, dropPinMode, onMapClick }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markers = useRef([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   useEffect(() => {
-    if (map.current) return; // Initialize map only once
+    if (map.current) return; // Only initialize once
 
-    mapboxgl.accessToken = MAPBOX_TOKEN;
+    // Dynamically load Google Maps JS API (for map only)
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
+    script.async = true;
+    script.onload = () => {
+      // Initialize Google Map
+      map.current = new window.google.maps.Map(mapContainer.current, {
+        center: { lat: 41.7151, lng: 44.8271 }, // Tbilisi
+        zoom: 13,
+        disableDefaultUI: false,
+      });
+    };
+    document.body.appendChild(script);
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [-73.9855, 40.7580], // Default to NYC Times Square
-      zoom: 13,
-      pitch: 0,
-      bearing: 0
-    });
-
-    // Add navigation controls (zoom buttons)
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
+    return () => {
+      if (script) document.body.removeChild(script);
+    };
   }, []);
-
-  // Update markers when restaurants change
+  // Places API autocomplete fetch
   useEffect(() => {
-    if (!map.current) return;
-
-    // Remove existing markers
-    markers.current.forEach(marker => marker.remove());
-    markers.current = [];
-
-    // Add new markers
-    restaurants.forEach((restaurant) => {
-      // Create custom marker element
-      const el = document.createElement('div');
-      el.className = 'custom-marker';
-      el.style.width = '40px';
-      el.style.height = '40px';
-      el.style.cursor = 'pointer';
-      el.style.transition = 'transform 0.2s';
-      
-      // Restaurant icon SVG
-      el.innerHTML = `
-        <svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="20" cy="20" r="18" fill="${selectedRestaurant?.id === restaurant.id ? '#6366f1' : '#ef4444'}" 
-                  stroke="white" stroke-width="3" />
-          <text x="20" y="26" font-size="20" text-anchor="middle" fill="white">🍴</text>
-        </svg>
-      `;
-
-      el.addEventListener('mouseenter', () => {
-        el.style.transform = 'scale(1.1)';
-      });
-
-      el.addEventListener('mouseleave', () => {
-        el.style.transform = 'scale(1)';
-      });
-
-      // Create marker
-      const marker = new mapboxgl.Marker(el)
-        .setLngLat([restaurant.location.lng, restaurant.location.lat])
-        .addTo(map.current);
-
-      // Add click handler
-      el.addEventListener('click', () => {
-        onMarkerClick(restaurant);
-        // Fly to marker
-        map.current.flyTo({
-          center: [restaurant.location.lng, restaurant.location.lat],
-          zoom: 15,
-          duration: 1000
-        });
-      });
-
-      markers.current.push(marker);
-    });
-
-  }, [restaurants, onMarkerClick, selectedRestaurant]);
-
-  // Fly to selected restaurant
-  useEffect(() => {
-    if (selectedRestaurant && map.current) {
-      map.current.flyTo({
-        center: [selectedRestaurant.location.lng, selectedRestaurant.location.lat],
-        zoom: 15,
-        duration: 1000
-      });
+    if (searchQuery.length < 3) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
     }
-  }, [selectedRestaurant]);
+    const controller = new AbortController();
+    const fetchSuggestions = async () => {
+      try {
+        const response = await fetch(
+          `/api/places?query=${encodeURIComponent(searchQuery)}`,
+          { signal: controller.signal }
+        );
+        const data = await response.json();
+        if (data.status === 'OK') {
+          setSuggestions(data.predictions);
+          setShowSuggestions(true);
+        } else {
+          setSuggestions([]);
+          setShowSuggestions(false);
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          setSuggestions([]);
+          setShowSuggestions(false);
+        }
+      }
+    };
+    fetchSuggestions();
+    return () => controller.abort();
+  }, [searchQuery]);
+  // Handle suggestion click: fetch place details and pan map
+  const handleSuggestionClick = async (suggestion) => {
+    setSearchQuery(suggestion.description);
+    setShowSuggestions(false);
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${suggestion.place_id}&key=${GOOGLE_MAPS_API_KEY}`
+      );
+      const data = await response.json();
+      if (data.status === 'OK' && data.result.geometry && data.result.geometry.location && map.current) {
+        map.current.panTo({
+          lat: data.result.geometry.location.lat,
+          lng: data.result.geometry.location.lng
+        });
+        map.current.setZoom(15);
+      }
+    } catch (err) {
+      // ignore
+    }
+  };
+
+  // Remove Mapbox click handler effect (handled in Google Maps init above)
+
+  // Remove Mapbox cursor effect (handled in Google Maps init above)
+
+  // Remove Mapbox marker effect (handled in Google Maps init above)
+
+  // Remove Mapbox flyTo effect (handled in Google Maps marker click above)
+
+  // Remove Mapbox search/autocomplete (handled by Google Places Autocomplete above)
+
+  // Remove Mapbox flyToLocation (handled by Google Maps above)
+
+  // Get current location (Google Maps version)
+  const getCurrentLocation = () => {
+    if ('geolocation' in navigator && map.current) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          map.current.panTo({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+          map.current.setZoom(14);
+        },
+        (error) => {
+          alert('Could not get your location. Please enable location services.');
+        }
+      );
+    } else {
+      alert('Geolocation is not supported by your browser');
+    }
+  };
 
   return (
-    <div 
-      ref={mapContainer} 
-      className="w-full h-full"
-      style={{ position: 'absolute', top: 0, left: 0 }}
-    />
+    <div className="relative w-full h-full">
+      {/* Search Bar (Google Places Autocomplete) */}
+      <div
+        className="absolute top-4 left-4 right-4 z-10"
+        style={dropPinMode ? { pointerEvents: 'none', opacity: 0.5 } : {}}
+      >
+        <div className="relative">
+          <div className="flex items-center bg-white rounded-lg shadow-lg">
+            <Search className="absolute left-3 text-gray-400" size={20} />
+            <input
+              id="google-places-input"
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search places..."
+              className="w-full pl-10 pr-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              disabled={dropPinMode}
+              autoComplete="off"
+            />
+          </div>
+          {/* Suggestions Dropdown */}
+          {showSuggestions && suggestions.length > 0 && !dropPinMode && (
+            <div className="absolute top-full mt-2 w-full bg-white rounded-lg shadow-xl max-h-64 overflow-y-auto z-20">
+              {suggestions.map((suggestion, index) => (
+                <div
+                  key={suggestion.place_id}
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-0"
+                >
+                  <div className="font-medium text-sm">{suggestion.structured_formatting.main_text}</div>
+                  <div className="text-xs text-gray-500">{suggestion.description}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Current Location Button */}
+      <button
+        onClick={getCurrentLocation}
+        className="absolute top-20 right-4 z-10 bg-white p-3 rounded-full shadow-lg hover:bg-gray-50 active:scale-95 transition-transform"
+        style={dropPinMode ? { pointerEvents: 'none', opacity: 0.5 } : {}}
+        disabled={dropPinMode}
+      >
+        <Locate size={20} className="text-primary" />
+      </button>
+
+      {/* Drop Pin Mode Indicator */}
+      {dropPinMode && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-4 py-2 rounded-full shadow-lg z-10 text-sm font-medium">
+          📍 Tap map to drop pin
+        </div>
+      )}
+
+      <div
+        ref={mapContainer}
+        className="w-full h-full"
+        style={{ position: 'absolute', top: 0, left: 0 }}
+      />
+    </div>
   );
 };
 
