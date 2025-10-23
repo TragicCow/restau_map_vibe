@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, MapPin, Search, Loader2 } from 'lucide-react';
 
 const MAPBOX_TOKEN = 'pk.eyJ1IjoidHJhZ2ljY293IiwiYSI6ImNtaDJma3ByajBmMjkyaXI1Y3BpNG1tMjcifQ.UwmYnBz3fczCfJopj-oBHA';
@@ -8,12 +8,16 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
   const [formData, setFormData] = useState({
     name: '',
     address: '',
-    cuisine: ''
+    cuisine: '',
+    placeId: null // Add placeId to form data
   });
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [error, setError] = useState('');
+  const cuisineInputRef = useRef(null);
+  const nameInputRef = useRef(null);
+  const addressInputRef = useRef(null);
 
   // Update form when prefillData changes
   useEffect(() => {
@@ -21,7 +25,8 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
       setFormData({
         name: prefillData.name || '',
         address: prefillData.address || '',
-        cuisine: ''
+        cuisine: '',
+        placeId: prefillData.placeId || null // Store placeId from Google Places
       });
       setSelectedLocation({
         lat: prefillData.lat,
@@ -85,19 +90,20 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
     }
 
     const newRestaurant = {
-      id: Date.now(),
+      // Don't include 'id' here - Firestore will generate it
       name: formData.name,
       address: mode === 'search' ? formData.address : `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`,
       cuisine: formData.cuisine,
       lng: selectedLocation.lng,
       lat: selectedLocation.lat,
+      placeId: formData.placeId, // Include placeId in the restaurant data
       reviews: []
     };
 
     onAdd(newRestaurant);
     
     // Reset form
-    setFormData({ name: '', address: '', cuisine: '' });
+    setFormData({ name: '', address: '', cuisine: '', placeId: null });
     setSelectedLocation(null);
     onClose();
   };
@@ -106,9 +112,9 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black bg-opacity-50 animate-fadeIn">
-      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl transform transition-transform duration-300 ease-out animate-slideUp max-h-[90vh] overflow-y-auto">
+      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl transform transition-transform duration-300 ease-out animate-slideUp max-h-[95vh] flex flex-col">
         {/* Header */}
-        <div className="sticky top-0 bg-white flex items-center justify-between p-6 border-b z-10">
+        <div className="flex items-center justify-between p-6 border-b flex-shrink-0">
           <h2 className="text-2xl font-bold text-gray-800">Add Restaurant</h2>
           <button
             onClick={onClose}
@@ -119,7 +125,7 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
@@ -164,11 +170,16 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
                 Address *
               </label>
               <input
+                ref={addressInputRef}
                 type="text"
                 value={formData.address}
                 onChange={(e) => handleAddressSearch(e.target.value)}
-                onFocus={() => {
+                onFocus={(e) => {
                   if (suggestions.length > 0) setShowSuggestions(true);
+                  // Scroll input into view when keyboard appears
+                  setTimeout(() => {
+                    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 300);
                 }}
                 placeholder="Start typing address..."
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-lg"
@@ -218,10 +229,17 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
               Restaurant Name *
             </label>
             <input
+              ref={nameInputRef}
               type="text"
               required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onFocus={(e) => {
+                // Scroll input into view when keyboard appears
+                setTimeout(() => {
+                  e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 300);
+              }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-lg"
               placeholder="e.g., Bella Napoli"
             />
@@ -232,10 +250,17 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
               Cuisine Type *
             </label>
             <input
+              ref={cuisineInputRef}
               type="text"
               required
               value={formData.cuisine}
               onChange={(e) => setFormData({ ...formData, cuisine: e.target.value })}
+              onFocus={(e) => {
+                // Scroll input into view when keyboard appears
+                setTimeout(() => {
+                  e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 300);
+              }}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-lg"
               placeholder="e.g., Italian, Mexican, Asian"
             />
@@ -244,7 +269,7 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
           <button
             type="submit"
             disabled={!selectedLocation}
-            className="w-full bg-primary text-white py-4 rounded-lg font-semibold text-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-primary text-white py-4 rounded-lg font-semibold text-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
           >
             Add Restaurant
           </button>
