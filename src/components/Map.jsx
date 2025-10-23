@@ -24,14 +24,20 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill, onCh
       map.current = new window.google.maps.Map(mapContainer.current, {
         center: { lat: 41.7151, lng: 44.8271 }, // Tbilisi
         zoom: 13,
-        disableDefaultUI: false,
+        disableDefaultUI: true, // Disable all default UI controls
+        zoomControl: false, // No zoom buttons
+        mapTypeControl: false, // No map/satellite toggle
+        streetViewControl: false, // No Street View pegman
+        fullscreenControl: false, // No fullscreen button
+        gestureHandling: 'greedy', // Allow pan/zoom without requiring two fingers
       });
-      // Add click listener for drop pin mode
-      map.current.addListener('click', (e) => {
+      // Add click listener for drop pin mode AND for fetching place details
+      map.current.addListener('click', async (e) => {
+        const { latLng } = e;
+        const lat = latLng.lat();
+        const lng = latLng.lng();
+        
         if (dropPinMode) {
-          const { latLng } = e;
-          const lat = latLng.lat();
-          const lng = latLng.lng();
           // Remove previous pin
           if (pinMarker.current) {
             pinMarker.current.setMap(null);
@@ -50,6 +56,82 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill, onCh
             onPinDrop({ lat, lng });
           } else {
             console.log('Pin dropped at:', { lat, lng });
+          }
+        } else {
+          // Hijack map clicks to show place info using Places API Nearby Search
+          try {
+            // Use Places API to find nearby places at clicked location
+            const response = await fetch(
+              `https://places.googleapis.com/v1/places:searchNearby`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+                  'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.types'
+                },
+                body: JSON.stringify({
+                  locationRestriction: {
+                    circle: {
+                      center: {
+                        latitude: lat,
+                        longitude: lng
+                      },
+                      radius: 50.0 // 50 meters radius
+                    }
+                  },
+                  maxResultCount: 1
+                })
+              }
+            );
+            
+            const data = await response.json();
+            
+            if (data.places && data.places.length > 0) {
+              const place = data.places[0];
+              
+              // Add a temporary marker for the selected place
+              if (pinMarker.current) {
+                pinMarker.current.setMap(null);
+              }
+              pinMarker.current = new window.google.maps.Marker({
+                position: { 
+                  lat: place.location.latitude, 
+                  lng: place.location.longitude 
+                },
+                map: map.current,
+                icon: {
+                  url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+                  scaledSize: new window.google.maps.Size(40, 40)
+                }
+              });
+              
+              // Prepare place data for info card
+              const placeData = {
+                name: place.displayName?.text || 'Unknown Place',
+                address: place.formattedAddress,
+                lat: place.location.latitude,
+                lng: place.location.longitude,
+                placeId: place.id,
+                types: place.types,
+                rating: place.rating,
+                userRatingCount: place.userRatingCount
+              };
+              
+              console.log('Clicked place:', placeData);
+              
+              // Check if this place is already in favorites
+              if (onCheckIfInFavorites && place.id) {
+                const inFavorites = await onCheckIfInFavorites(place.id);
+                setIsPlaceInFavorites(inFavorites);
+              } else {
+                setIsPlaceInFavorites(false);
+              }
+              
+              setSelectedPlace(placeData);
+            }
+          } catch (err) {
+            console.error('Error fetching place at click location:', err);
           }
         }
       });
@@ -99,17 +181,39 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill, onCh
             scaledSize: new window.google.maps.Size(32, 32)
           }
         });
-        marker.addListener('click', () => {
-          // Demo save to favorites: console log place data
-          if (onFavorite) {
-            onFavorite(r);
+        marker.addListener('click', async () => {
+          // Show PlaceInfoCard for existing restaurant
+          const placeData = {
+            name: r.name,
+            address: r.address,
+            lat: r.lat,
+            lng: r.lng,
+            placeId: r.placeId,
+            cuisine: r.cuisine
+          };
+          
+          // Add a temporary marker highlight
+          if (pinMarker.current) {
+            pinMarker.current.setMap(null);
+          }
+          pinMarker.current = new window.google.maps.Marker({
+            position: { lat: r.lat, lng: r.lng },
+            map: map.current,
+            icon: {
+              url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+              scaledSize: new window.google.maps.Size(40, 40)
+            }
+          });
+          
+          // Check if place is in favorites (should be true for existing restaurants)
+          if (onCheckIfInFavorites && r.placeId) {
+            const inFavorites = await onCheckIfInFavorites(r.placeId);
+            setIsPlaceInFavorites(inFavorites);
           } else {
-            console.log('Saved to favorites:', r);
+            setIsPlaceInFavorites(true); // Assume true for existing restaurants
           }
-          // Auto-fill name in add form
-          if (onAutoFill) {
-            onAutoFill(r.name);
-          }
+          
+          setSelectedPlace(placeData);
         });
         markers.current.push(marker);
       });
