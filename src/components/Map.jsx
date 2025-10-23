@@ -2,12 +2,13 @@ import React, { useRef, useEffect, useState } from 'react';
 import { Search, Locate } from 'lucide-react';
 
 // google maps api key from .env
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+const GOOGLE_MAPS_API_KEY ="AIzaSyDpqgu2XeA4peLoQk0gO0rTLBWkrDTIdSA"// import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-const Map = ({ restaurants, onMarkerClick, selectedRestaurant, dropPinMode, onMapClick }) => {
+const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markers = useRef([]);
+  const pinMarker = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -15,24 +16,102 @@ const Map = ({ restaurants, onMarkerClick, selectedRestaurant, dropPinMode, onMa
   useEffect(() => {
     if (map.current) return; // Only initialize once
 
-    // Dynamically load Google Maps JS API (for map only)
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
-    script.async = true;
-    script.onload = () => {
+    const initMap = () => {
       // Initialize Google Map
       map.current = new window.google.maps.Map(mapContainer.current, {
         center: { lat: 41.7151, lng: 44.8271 }, // Tbilisi
         zoom: 13,
         disableDefaultUI: false,
       });
+      // Add click listener for drop pin mode
+      map.current.addListener('click', (e) => {
+        if (dropPinMode) {
+          const { latLng } = e;
+          const lat = latLng.lat();
+          const lng = latLng.lng();
+          // Remove previous pin
+          if (pinMarker.current) {
+            pinMarker.current.setMap(null);
+          }
+          // Add new pin marker
+          pinMarker.current = new window.google.maps.Marker({
+            position: { lat, lng },
+            map: map.current,
+            icon: {
+              url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+              scaledSize: new window.google.maps.Size(40, 40)
+            }
+          });
+          // Demo save feature: console log pin data
+          if (onPinDrop) {
+            onPinDrop({ lat, lng });
+          } else {
+            console.log('Pin dropped at:', { lat, lng });
+          }
+        }
+      });
     };
-    document.body.appendChild(script);
 
-    return () => {
-      if (script) document.body.removeChild(script);
+    // Check if Google Maps is already loaded
+    if (window.google && window.google.maps) {
+      initMap();
+      return;
+    }
+
+    // Check if script is already loading
+    const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+    if (existingScript) {
+      existingScript.addEventListener('load', initMap);
+      return () => existingScript.removeEventListener('load', initMap);
+    }
+
+    // Load Google Maps JS API - ONLY ONE SCRIPT CREATION
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}`;
+    script.async = true;
+    script.defer = true;
+    script.onload = initMap;
+    script.onerror = () => {
+      console.error('Failed to load Google Maps API');
     };
+    document.head.appendChild(script);
   }, []);
+
+  // Update markers when restaurants change
+  useEffect(() => {
+    if (!map.current) return;
+    
+    // Clear existing markers
+    markers.current.forEach(m => m.setMap(null));
+    markers.current = [];
+    
+    if (Array.isArray(restaurants)) {
+      restaurants.forEach((r) => {
+        const marker = new window.google.maps.Marker({
+          position: { lat: r.lat, lng: r.lng },
+          map: map.current,
+          title: r.name,
+          icon: {
+            url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+            scaledSize: new window.google.maps.Size(32, 32)
+          }
+        });
+        marker.addListener('click', () => {
+          // Demo save to favorites: console log place data
+          if (onFavorite) {
+            onFavorite(r);
+          } else {
+            console.log('Saved to favorites:', r);
+          }
+          // Auto-fill name in add form
+          if (onAutoFill) {
+            onAutoFill(r.name);
+          }
+        });
+        markers.current.push(marker);
+      });
+    }
+  }, [restaurants, onFavorite, onAutoFill]);
   // Places API autocomplete fetch
   useEffect(() => {
     if (searchQuery.length < 3) {
@@ -43,13 +122,17 @@ const Map = ({ restaurants, onMarkerClick, selectedRestaurant, dropPinMode, onMa
     const controller = new AbortController();
     const fetchSuggestions = async () => {
       try {
-        const response = await fetch(
-          `/api/places?query=${encodeURIComponent(searchQuery)}`,
-          { signal: controller.signal }
-        );
+        const response = await fetch('/api/places', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: searchQuery }),
+          signal: controller.signal
+        });
         const data = await response.json();
-        if (data.status === 'OK') {
-          setSuggestions(data.predictions);
+        console.log('Autocomplete response:', data);
+        // New Places API v1 returns 'suggestions' not 'predictions'
+        if (data.suggestions && data.suggestions.length > 0) {
+          setSuggestions(data.suggestions);
           setShowSuggestions(true);
         } else {
           setSuggestions([]);
@@ -57,6 +140,7 @@ const Map = ({ restaurants, onMarkerClick, selectedRestaurant, dropPinMode, onMa
         }
       } catch (err) {
         if (err.name !== 'AbortError') {
+          console.error('Autocomplete error:', err);
           setSuggestions([]);
           setShowSuggestions(false);
         }
@@ -67,22 +151,26 @@ const Map = ({ restaurants, onMarkerClick, selectedRestaurant, dropPinMode, onMa
   }, [searchQuery]);
   // Handle suggestion click: fetch place details and pan map
   const handleSuggestionClick = async (suggestion) => {
-    setSearchQuery(suggestion.description);
+    const displayText = suggestion.placePrediction?.text?.text || 'Unknown';
+    setSearchQuery(displayText);
     setShowSuggestions(false);
+    
+    const placeId = suggestion.placePrediction?.placeId;
+    if (!placeId || !map.current) return;
+    
     try {
+      // Use Geocoding API to get coordinates from place_id
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${suggestion.place_id}&key=${GOOGLE_MAPS_API_KEY}`
+        `https://maps.googleapis.com/maps/api/geocode/json?place_id=${placeId}&key=${GOOGLE_MAPS_API_KEY}`
       );
       const data = await response.json();
-      if (data.status === 'OK' && data.result.geometry && data.result.geometry.location && map.current) {
-        map.current.panTo({
-          lat: data.result.geometry.location.lat,
-          lng: data.result.geometry.location.lng
-        });
+      if (data.status === 'OK' && data.results[0]?.geometry?.location) {
+        const { lat, lng } = data.results[0].geometry.location;
+        map.current.panTo({ lat, lng });
         map.current.setZoom(15);
       }
     } catch (err) {
-      // ignore
+      console.error('Error fetching place details:', err);
     }
   };
 
@@ -123,7 +211,7 @@ const Map = ({ restaurants, onMarkerClick, selectedRestaurant, dropPinMode, onMa
       {/* Search Bar (Google Places Autocomplete) */}
       <div
         className="absolute top-4 left-4 right-4 z-10"
-        style={dropPinMode ? { pointerEvents: 'none', opacity: 0.5 } : {}}
+        style={dropPinMode ? { opacity: 0.5 } : {}}
       >
         <div className="relative">
           <div className="flex items-center bg-white rounded-lg shadow-lg">
@@ -144,12 +232,16 @@ const Map = ({ restaurants, onMarkerClick, selectedRestaurant, dropPinMode, onMa
             <div className="absolute top-full mt-2 w-full bg-white rounded-lg shadow-xl max-h-64 overflow-y-auto z-20">
               {suggestions.map((suggestion, index) => (
                 <div
-                  key={suggestion.place_id}
+                  key={suggestion.placePrediction?.placeId || index}
                   onClick={() => handleSuggestionClick(suggestion)}
                   className="p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-0"
                 >
-                  <div className="font-medium text-sm">{suggestion.structured_formatting.main_text}</div>
-                  <div className="text-xs text-gray-500">{suggestion.description}</div>
+                  <div className="font-medium text-sm">
+                    {suggestion.placePrediction?.text?.text || suggestion.placePrediction?.structuredFormat?.mainText?.text || 'Unknown'}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {suggestion.placePrediction?.structuredFormat?.secondaryText?.text || ''}
+                  </div>
                 </div>
               ))}
             </div>
@@ -161,7 +253,7 @@ const Map = ({ restaurants, onMarkerClick, selectedRestaurant, dropPinMode, onMa
       <button
         onClick={getCurrentLocation}
         className="absolute top-20 right-4 z-10 bg-white p-3 rounded-full shadow-lg hover:bg-gray-50 active:scale-95 transition-transform"
-        style={dropPinMode ? { pointerEvents: 'none', opacity: 0.5 } : {}}
+        style={dropPinMode ? { opacity: 0.5 } : {}}
         disabled={dropPinMode}
       >
         <Locate size={20} className="text-primary" />
