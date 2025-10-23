@@ -5,7 +5,7 @@ import PlaceInfoCard from './PlaceInfoCard';
 // google maps api key from .env
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill }) => {
+const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill, onCheckIfInFavorites }) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markers = useRef([]);
@@ -14,6 +14,7 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill }) =>
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState(null);
+  const [isPlaceInFavorites, setIsPlaceInFavorites] = useState(false);
 
   useEffect(() => {
     if (map.current) return; // Only initialize once
@@ -227,6 +228,15 @@ useEffect(() => {
         };
         
         console.log('Selected place from autocomplete:', placeData);
+        
+        // Check if this place is already in favorites
+        if (onCheckIfInFavorites && placeId) {
+          const inFavorites = await onCheckIfInFavorites(placeId);
+          setIsPlaceInFavorites(inFavorites);
+        } else {
+          setIsPlaceInFavorites(false);
+        }
+        
         setSelectedPlace(placeData);
       }
     } catch (err) {
@@ -346,6 +356,7 @@ useEffect(() => {
           place={selectedPlace}
           onAddToFavorites={handleAddToFavorites}
           onClose={() => setSelectedPlace(null)}
+          isInFavorites={isPlaceInFavorites}
         />
       )}
 

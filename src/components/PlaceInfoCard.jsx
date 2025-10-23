@@ -1,7 +1,7 @@
 import React from 'react';
-import { X, Star, MapPin, Phone, Globe, Clock } from 'lucide-react';
+import { X, Star, MapPin, Phone, Globe, Clock, Trash2 } from 'lucide-react';
 
-const PlaceInfoCard = ({ place, onAddToFavorites, onClose }) => {
+const PlaceInfoCard = ({ place, onAddToFavorites, onClose, isInFavorites = false }) => {
   if (!place) return null;
 
   return (
@@ -65,10 +65,23 @@ const PlaceInfoCard = ({ place, onAddToFavorites, onClose }) => {
 
       <button
         onClick={() => onAddToFavorites(place)}
-        className="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+        className={`w-full py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 ${
+          isInFavorites 
+            ? 'bg-red-600 text-white hover:bg-red-700' 
+            : 'bg-indigo-600 text-white hover:bg-indigo-700'
+        }`}
       >
-        <Star className="w-4 h-4" />
-        Add to Favorites
+        {isInFavorites ? (
+          <>
+            <Trash2 className="w-4 h-4" />
+            Remove from Favorites
+          </>
+        ) : (
+          <>
+            <Star className="w-4 h-4" />
+            Add to Favorites
+          </>
+        )}
       </button>
     </div>
   );

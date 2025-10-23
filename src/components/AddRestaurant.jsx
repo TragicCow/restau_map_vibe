@@ -8,7 +8,8 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
   const [formData, setFormData] = useState({
     name: '',
     address: '',
-    cuisine: ''
+    cuisine: '',
+    placeId: null // Add placeId to form data
   });
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -21,7 +22,8 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
       setFormData({
         name: prefillData.name || '',
         address: prefillData.address || '',
-        cuisine: ''
+        cuisine: '',
+        placeId: prefillData.placeId || null // Store placeId from Google Places
       });
       setSelectedLocation({
         lat: prefillData.lat,
@@ -85,19 +87,20 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
     }
 
     const newRestaurant = {
-      id: Date.now(),
+      // Don't include 'id' here - Firestore will generate it
       name: formData.name,
       address: mode === 'search' ? formData.address : `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`,
       cuisine: formData.cuisine,
       lng: selectedLocation.lng,
       lat: selectedLocation.lat,
+      placeId: formData.placeId, // Include placeId in the restaurant data
       reviews: []
     };
 
     onAdd(newRestaurant);
     
     // Reset form
-    setFormData({ name: '', address: '', cuisine: '' });
+    setFormData({ name: '', address: '', cuisine: '', placeId: null });
     setSelectedLocation(null);
     onClose();
   };
