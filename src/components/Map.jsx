@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Search, Locate } from 'lucide-react';
+import PlaceInfoCard from './PlaceInfoCard';
 
 // google maps api key from .env
-const GOOGLE_MAPS_API_KEY ="AIzaSyDpqgu2XeA4peLoQk0gO0rTLBWkrDTIdSA"// import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill }) => {
   const mapContainer = useRef(null);
@@ -12,6 +13,7 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill }) =>
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedPlace, setSelectedPlace] = useState(null);
 
   useEffect(() => {
     if (map.current) return; // Only initialize once
@@ -113,42 +115,56 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill }) =>
     }
   }, [restaurants, onFavorite, onAutoFill]);
   // Places API autocomplete fetch
-  useEffect(() => {
-    if (searchQuery.length < 3) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
-    const controller = new AbortController();
-    const fetchSuggestions = async () => {
-      try {
-        const response = await fetch('/api/places', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: searchQuery }),
-          signal: controller.signal
-        });
-        const data = await response.json();
-        console.log('Autocomplete response:', data);
-        // New Places API v1 returns 'suggestions' not 'predictions'
-        if (data.suggestions && data.suggestions.length > 0) {
-          setSuggestions(data.suggestions);
-          setShowSuggestions(true);
-        } else {
-          setSuggestions([]);
-          setShowSuggestions(false);
-        }
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('Autocomplete error:', err);
-          setSuggestions([]);
-          setShowSuggestions(false);
-        }
+useEffect(() => {
+  if (searchQuery.length < 3) {
+    setSuggestions([]);
+    setShowSuggestions(false);
+    return;
+  }
+  const controller = new AbortController();
+  const fetchSuggestions = async () => {
+    try {
+      const response = await fetch('/api/places', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          input: searchQuery
+        }),
+        signal: controller.signal
+      });
+      const data = await response.json();
+      console.log('Autocomplete response:', data);
+      // New Places API v1 returns 'suggestions' array
+      if (data.suggestions && data.suggestions.length > 0) {
+        setSuggestions(data.suggestions);
+        setShowSuggestions(true);
+      } else {
+        setSuggestions([]);
+        setShowSuggestions(false);
       }
-    };
-    fetchSuggestions();
-    return () => controller.abort();
-  }, [searchQuery]);
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Autocomplete error:', err);
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }
+  };
+  fetchSuggestions();
+  return () => controller.abort();
+}, [searchQuery]);
+
+  // Handle Enter key press in search
+  const handleSearchKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (suggestions.length > 0) {
+        // Use first suggestion if available
+        handleSuggestionClick(suggestions[0]);
+      }
+    }
+  };
+
   // Handle suggestion click: fetch place details and pan map
   const handleSuggestionClick = async (suggestion) => {
     const displayText = suggestion.placePrediction?.text?.text || 'Unknown';
@@ -159,18 +175,75 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill }) =>
     if (!placeId || !map.current) return;
     
     try {
-      // Use Geocoding API to get coordinates from place_id
+      // Use NEW Places API (New) Place Details to get full info
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?place_id=${placeId}&key=${GOOGLE_MAPS_API_KEY}`
+        `https://places.googleapis.com/v1/places/${placeId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+            'X-Goog-FieldMask': 'id,displayName,formattedAddress,location,rating,userRatingCount,internationalPhoneNumber,websiteUri,regularOpeningHours,types'
+          }
+        }
       );
       const data = await response.json();
-      if (data.status === 'OK' && data.results[0]?.geometry?.location) {
-        const { lat, lng } = data.results[0].geometry.location;
+      
+      if (data.location) {
+        const lat = data.location.latitude;
+        const lng = data.location.longitude;
+        
+        // Pan and zoom to the selected place
         map.current.panTo({ lat, lng });
-        map.current.setZoom(15);
+        map.current.setZoom(17);
+        
+        // Add a temporary marker for the selected place
+        if (pinMarker.current) {
+          pinMarker.current.setMap(null);
+        }
+        pinMarker.current = new window.google.maps.Marker({
+          position: { lat, lng },
+          map: map.current,
+          icon: {
+            url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+            scaledSize: new window.google.maps.Size(40, 40)
+          },
+          title: displayText
+        });
+        
+        // Prepare place data for info card with rich details
+        const placeData = {
+          name: data.displayName?.text || displayText,
+          address: data.formattedAddress,
+          lat,
+          lng,
+          placeId,
+          types: data.types,
+          rating: data.rating,
+          userRatingCount: data.userRatingCount,
+          phone: data.internationalPhoneNumber,
+          website: data.websiteUri,
+          hours: data.regularOpeningHours
+        };
+        
+        console.log('Selected place from autocomplete:', placeData);
+        setSelectedPlace(placeData);
       }
     } catch (err) {
       console.error('Error fetching place details:', err);
+    }
+  };
+
+  const handleAddToFavorites = (place) => {
+    console.log('Adding to favorites:', place);
+    setSelectedPlace(null);
+    
+    // Trigger callbacks for parent component
+    if (onFavorite) {
+      onFavorite(place);
+    }
+    if (onAutoFill) {
+      onAutoFill(place.name);
     }
   };
 
@@ -221,6 +294,7 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill }) =>
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyPress={handleSearchKeyPress}
               placeholder="Search places..."
               className="w-full pl-10 pr-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               disabled={dropPinMode}
@@ -264,6 +338,15 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill }) =>
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-primary text-white px-4 py-2 rounded-full shadow-lg z-10 text-sm font-medium">
           📍 Tap map to drop pin
         </div>
+      )}
+
+      {/* Place Info Card */}
+      {selectedPlace && (
+        <PlaceInfoCard
+          place={selectedPlace}
+          onAddToFavorites={handleAddToFavorites}
+          onClose={() => setSelectedPlace(null)}
+        />
       )}
 
       <div

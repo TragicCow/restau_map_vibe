@@ -3,7 +3,7 @@ import { X, MapPin, Search, Loader2 } from 'lucide-react';
 
 const MAPBOX_TOKEN = 'pk.eyJ1IjoidHJhZ2ljY293IiwiYSI6ImNtaDJma3ByajBmMjkyaXI1Y3BpNG1tMjcifQ.UwmYnBz3fczCfJopj-oBHA';
 
-const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin }) => {
+const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, prefillData }) => {
   const [mode, setMode] = useState('search'); // 'search' or 'pin'
   const [formData, setFormData] = useState({
     name: '',
@@ -14,6 +14,22 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin }) 
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [error, setError] = useState('');
+
+  // Update form when prefillData changes
+  useEffect(() => {
+    if (prefillData) {
+      setFormData({
+        name: prefillData.name || '',
+        address: prefillData.address || '',
+        cuisine: ''
+      });
+      setSelectedLocation({
+        lat: prefillData.lat,
+        lng: prefillData.lng
+      });
+      setMode('search');
+    }
+  }, [prefillData]);
 
   // Update selected location when pin is dropped
   useEffect(() => {

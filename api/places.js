@@ -1,10 +1,10 @@
-// Vercel Serverless API route for Google Places Autocomplete (v1)
+// Vercel Serverless API route for Google Places Autocomplete (NEW API v1)
 export default async function handler(req, res) {
-  const { query, type = ['establishment', 'address', 'geocode'], country = ['GE'] } = req.body; // Parameters from request body
-  const apiKey = "AIzaSyDpqgu2XeA4peLoQk0gO0rTLBWkrDTIdSA";//process.env.GOOGLE_MAPS_API_KEY; // Use correct env variable
+  const { input } = req.body; // Use 'input' parameter as per NEW API v1
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY; // Try both env var names
 
-  if (!query || !apiKey) {
-    return res.status(400).json({ error: 'Missing query or API key' });
+  if (!input || !apiKey) {
+    return res.status(400).json({ error: 'Missing input or API key' });
   }
 
   try {
@@ -14,11 +14,12 @@ export default async function handler(req, res) {
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'suggestions.placePrediction.text,suggestions.placePrediction.placeId',
       },
       body: JSON.stringify({
-        input: query,
-        includedPrimaryTypes: type,
-        includedRegionCodes: country,
+        input: input,
+        includedRegionCodes: ['GE'], // Focus on Georgia
+        languageCode: 'en',
       }),
     });
 

@@ -12,6 +12,7 @@ function App() {
   const [showListView, setShowListView] = useState(false);
   const [dropPinMode, setDropPinMode] = useState(false);
   const [droppedPin, setDroppedPin] = useState(null);
+  const [prefillData, setPrefillData] = useState(null);
 
   const handleAddRestaurant = (newRestaurant) => {
     setRestaurants([...restaurants, newRestaurant]);
@@ -61,6 +62,18 @@ function App() {
     setShowAddModal(false);
     setDropPinMode(false);
     setDroppedPin(null);
+    setPrefillData(null);
+  };
+
+  const handleFavorite = (place) => {
+    console.log('Favorite clicked:', place);
+    // Prefill the add restaurant form and open modal
+    setPrefillData(place);
+    setShowAddModal(true);
+  };
+
+  const handleAutoFill = (name) => {
+    console.log('Auto-fill name:', name);
   };
 
   return (
@@ -72,6 +85,8 @@ function App() {
         selectedRestaurant={selectedRestaurant}
         dropPinMode={dropPinMode}
         onMapClick={handleMapClick}
+        onFavorite={handleFavorite}
+        onAutoFill={handleAutoFill}
       />
 
       {/* Floating Action Buttons */}
@@ -153,6 +168,7 @@ function App() {
         onAdd={handleAddRestaurant}
         onEnableDropPin={handleEnableDropPin}
         droppedPin={droppedPin}
+        prefillData={prefillData}
       />
 
       {selectedRestaurant && (
