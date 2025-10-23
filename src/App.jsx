@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, List, Trash2, User } from 'lucide-react';
+import { List, Trash2, User } from 'lucide-react';
 import Map from './components/Map';
 import AddRestaurant from './components/AddRestaurant';
 import RestaurantDetail from './components/RestaurantDetail';
@@ -40,10 +40,13 @@ function App() {
   const loadRestaurants = async () => {
     setLoading(true);
     try {
+      console.log('Loading restaurants from Firestore...');
       const data = await getAllRestaurants();
+      console.log('Loaded restaurants:', data);
       setRestaurants(data);
     } catch (error) {
       console.error('Error loading restaurants:', error);
+      console.error('Error details:', error.message);
     } finally {
       setLoading(false);
     }
@@ -92,22 +95,6 @@ function App() {
   const handleMarkerClick = (restaurant) => {
     setSelectedRestaurant(restaurant);
     setShowListView(false);
-  };
-
-  const handleAddReview = (restaurantId, review) => {
-    setRestaurants(restaurants.map(r => 
-      r.id === restaurantId 
-        ? { ...r, reviews: [...r.reviews, review] }
-        : r
-    ));
-    
-    // Update selected restaurant if it's the one being reviewed
-    if (selectedRestaurant?.id === restaurantId) {
-      setSelectedRestaurant({
-        ...selectedRestaurant,
-        reviews: [...selectedRestaurant.reviews, review]
-      });
-    }
   };
 
   const handleCloseDetail = () => {
@@ -201,22 +188,14 @@ function App() {
         onCheckIfInFavorites={handleCheckIfInFavorites}
       />
 
-      {/* Floating Action Buttons */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-3">
+      {/* Floating Action Button */}
+      <div className="fixed bottom-6 right-6 z-40">
         {/* List View Button */}
         <button
           onClick={() => setShowListView(!showListView)}
           className="w-14 h-14 bg-white text-gray-700 rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center active:scale-95"
         >
           <List className="w-6 h-6" />
-        </button>
-        
-        {/* Add Restaurant Button */}
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="w-14 h-14 bg-primary text-white rounded-full shadow-lg hover:shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center active:scale-95"
-        >
-          <Plus className="w-7 h-7" />
         </button>
       </div>
 
@@ -320,7 +299,7 @@ function App() {
         <RestaurantDetail
           restaurant={selectedRestaurant}
           onClose={handleCloseDetail}
-          onAddReview={handleAddReview}
+          currentUser={currentUser}
         />
       )}
     </div>
