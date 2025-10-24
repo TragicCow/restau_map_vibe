@@ -20,10 +20,17 @@ const PlaceInfoCard = ({ place, onAddToFavorites, onClose, isInFavorites = false
 
       <h3 className="text-xl font-bold mb-1 pr-8 text-gray-800">{place.name}</h3>
       
-      {place.cuisine && (
-        <span className="inline-block px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium mb-3">
-          {place.cuisine}
-        </span>
+      {place.tags && place.tags.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {place.tags.map((tag, index) => (
+            <span
+              key={index}
+              className="px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-medium"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
       )}
       
       <div className="space-y-2 text-sm text-gray-600 mb-4">

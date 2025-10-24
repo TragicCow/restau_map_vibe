@@ -76,14 +76,19 @@ export const getRestaurantByPlaceId = async (placeId) => {
  */
 export const addRestaurant = async (restaurantData, userId) => {
   try {
+    // Clean out undefined values - Firestore doesn't accept undefined
+    const cleanedData = Object.fromEntries(
+      Object.entries(restaurantData).filter(([_, value]) => value !== undefined)
+    );
+
     const docRef = await addDoc(collection(db, RESTAURANTS_COLLECTION), {
-      ...restaurantData,
+      ...cleanedData,
       userId,
       deleted: false,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
-    return { id: docRef.id, ...restaurantData, userId, deleted: false };
+    return { id: docRef.id, ...cleanedData, userId, deleted: false };
   } catch (error) {
     console.error('Error adding restaurant:', error);
     throw error;
@@ -115,6 +120,35 @@ export const deleteRestaurant = async (restaurantId) => {
     console.error('Error deleting restaurant:', error);
     console.error('Error code:', error.code);
     console.error('Error message:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Update restaurant fields (e.g., tags)
+ */
+export const updateRestaurant = async (restaurantId, updates) => {
+  try {
+    if (!restaurantId || typeof restaurantId !== 'string') {
+      throw new Error(`Invalid restaurant ID: ${restaurantId}. Expected a string.`);
+    }
+    
+    // Clean out undefined values - Firestore doesn't accept undefined
+    // But DO accept empty arrays and other falsy values like empty strings
+    const cleanedUpdates = Object.fromEntries(
+      Object.entries(updates).filter(([_, value]) => value !== undefined && value !== null)
+    );
+
+    console.log('Updating restaurant with:', cleanedUpdates);
+
+    const docRef = doc(db, RESTAURANTS_COLLECTION, restaurantId);
+    await updateDoc(docRef, {
+      ...cleanedUpdates,
+      updatedAt: serverTimestamp()
+    });
+    return true;
+  } catch (error) {
+    console.error('Error updating restaurant:', error);
     throw error;
   }
 };

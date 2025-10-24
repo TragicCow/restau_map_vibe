@@ -189,7 +189,7 @@ const Map = ({ restaurants, dropPinMode, onPinDrop, onFavorite, onAutoFill, onCh
             lat: r.lat,
             lng: r.lng,
             placeId: r.placeId,
-            cuisine: r.cuisine
+            tags: r.tags
           };
           
           // Add a temporary marker highlight

@@ -1,17 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { List, Trash2, User } from 'lucide-react';
+import { List, Trash2, User, LogOut } from 'lucide-react';
 import Map from './components/Map';
 import AddRestaurant from './components/AddRestaurant';
 import RestaurantDetail from './components/RestaurantDetail';
-import UserSelector, { USERS } from './components/UserSelector';
+import LoginScreen from './components/LoginScreen';
+import Toast from './components/Toast';
+import ConfirmDialog from './components/ConfirmDialog';
+import { getUserByEmail, USERS } from './components/UserSelector';
 import { 
   getAllRestaurants, 
   addRestaurant, 
   getRestaurantByPlaceId,
   deleteRestaurant 
 } from './firebase/firestore';
+import { onAuthStateChange, signOutUser } from './firebase/auth';
 
 function App() {
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,21 +27,40 @@ function App() {
   const [dropPinMode, setDropPinMode] = useState(false);
   const [droppedPin, setDroppedPin] = useState(null);
   const [prefillData, setPrefillData] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
-  // Load user from localStorage on mount
+  // Check Firebase authentication on mount
   useEffect(() => {
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-      setCurrentUser(JSON.parse(savedUser));
-    }
+    const unsubscribe = onAuthStateChange((user) => {
+      if (user) {
+        console.log('User authenticated:', user.email);
+        setAuthUser(user);
+        
+        // Automatically set currentUser based on email mapping
+        const mappedUser = getUserByEmail(user.email);
+        if (mappedUser) {
+          setCurrentUser(mappedUser);
+          localStorage.setItem('currentUser', JSON.stringify(mappedUser));
+        }
+      } else {
+        console.log('User not authenticated');
+        setAuthUser(null);
+        setCurrentUser(null);
+        localStorage.removeItem('currentUser');
+      }
+      setAuthLoading(false);
+    });
+    
+    return () => unsubscribe();
   }, []);
 
-  // Load restaurants from Firebase when user is selected
+  // Load restaurants from Firebase when user is authenticated
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && authUser) {
       loadRestaurants();
     }
-  }, [currentUser]);
+  }, [currentUser, authUser]);
 
   const loadRestaurants = async () => {
     setLoading(true);
@@ -52,9 +77,8 @@ function App() {
     }
   };
 
-  const handleUserSelect = (user) => {
-    setCurrentUser(user);
-    localStorage.setItem('currentUser', JSON.stringify(user));
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
   };
 
   const handleAddRestaurant = async (newRestaurant) => {
@@ -63,7 +87,7 @@ function App() {
       if (newRestaurant.placeId) {
         const existing = await getRestaurantByPlaceId(newRestaurant.placeId);
         if (existing) {
-          alert('This restaurant is already in favorites!');
+          showToast('This restaurant is already in favorites!', 'warning');
           return;
         }
       }
@@ -75,9 +99,10 @@ function App() {
       setDroppedPin(null);
       setShowAddModal(false);
       setPrefillData(null);
+      showToast('Restaurant added to favorites!', 'success');
     } catch (error) {
       console.error('Error adding restaurant:', error);
-      alert('Failed to add restaurant. Please try again.');
+      showToast('Failed to add restaurant. Please try again.', 'error');
     }
   };
 
@@ -86,9 +111,10 @@ function App() {
       await deleteRestaurant(restaurantId);
       setRestaurants(restaurants.filter(r => r.id !== restaurantId));
       setSelectedRestaurant(null);
+      showToast('Restaurant removed from favorites', 'success');
     } catch (error) {
       console.error('Error removing restaurant:', error);
-      alert('Failed to remove restaurant. Please try again.');
+      showToast('Failed to remove restaurant. Please try again.', 'error');
     }
   };
 
@@ -133,6 +159,7 @@ function App() {
           console.log('Removing restaurant with ID:', existing.id);
           await deleteRestaurant(existing.id);
           setRestaurants(restaurants.filter(r => r.id !== existing.id));
+          showToast('Removed from favorites', 'success');
           return;
         }
       }
@@ -143,7 +170,7 @@ function App() {
     } catch (error) {
       console.error('Error in handleFavorite:', error);
       console.error('Full error object:', JSON.stringify(error, null, 2));
-      alert('Failed to process request. Please try again.');
+      showToast('Failed to process request. Please try again.', 'error');
     }
   };
 
@@ -157,9 +184,32 @@ function App() {
     return existing !== null;
   };
 
-  // Show user selector if no user is selected
-  if (!currentUser) {
-    return <UserSelector onSelectUser={handleUserSelect} />;
+  const handleLogout = async () => {
+    try {
+      await signOutUser();
+      setAuthUser(null);
+      setCurrentUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+      showToast('Failed to log out. Please try again.', 'error');
+    }
+  };
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login screen if not authenticated
+  if (!authUser) {
+    return <LoginScreen onLoginSuccess={(user) => setAuthUser(user)} />;
   }
 
   // Show loading state
@@ -198,6 +248,16 @@ function App() {
           <List className="w-6 h-6" />
         </button>
       </div>
+
+      {/* Logout Button */}
+      <button
+        onClick={handleLogout}
+        className="fixed top-4 right-4 z-40 flex items-center gap-2 px-4 py-2 bg-white text-red-600 rounded-full shadow-lg hover:bg-red-50 transition-all active:scale-95"
+        title="Logout"
+      >
+        <LogOut className="w-4 h-4" />
+        <span className="text-sm font-medium">Logout</span>
+      </button>
 
       {/* List View Overlay */}
       {showListView && (
@@ -253,13 +313,17 @@ function App() {
                           )}
                         </div>
                         <p className="text-sm text-gray-600 mb-2">{restaurant.address}</p>
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium">
-                            {restaurant.cuisine}
-                          </span>
-                          <span className="text-sm text-gray-500">
-                            {restaurant.reviews?.length || 0} review{restaurant.reviews?.length !== 1 ? 's' : ''}
-                          </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {restaurant.tags && restaurant.tags.length > 0 ? (
+                            restaurant.tags.map((tag, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium"
+                              >
+                                {tag}
+                              </span>
+                            ))
+                          ) : null}
                         </div>
                       </div>
                       
@@ -267,9 +331,18 @@ function App() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (window.confirm(`Remove "${restaurant.name}" from favorites?`)) {
-                            handleRemoveRestaurant(restaurant.id);
-                          }
+                          setConfirmDialog({
+                            title: 'Remove from Favorites?',
+                            message: `Are you sure you want to remove "${restaurant.name}" from your favorites?`,
+                            onConfirm: () => {
+                              handleRemoveRestaurant(restaurant.id);
+                              setConfirmDialog(null);
+                            },
+                            onCancel: () => setConfirmDialog(null),
+                            confirmText: 'Remove',
+                            cancelText: 'Cancel',
+                            isDangerous: true
+                          });
                         }}
                         className="absolute bottom-4 right-4 p-2 text-red-500 hover:bg-red-50 rounded-full transition"
                         title="Remove from favorites"
@@ -300,6 +373,29 @@ function App() {
           restaurant={selectedRestaurant}
           onClose={handleCloseDetail}
           currentUser={currentUser}
+          onToast={showToast}
+        />
+      )}
+
+      {/* Toast Notifications */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {/* Confirm Dialog */}
+      {confirmDialog && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={confirmDialog.onCancel}
+          confirmText={confirmDialog.confirmText}
+          cancelText={confirmDialog.cancelText}
+          isDangerous={confirmDialog.isDangerous}
         />
       )}
     </div>

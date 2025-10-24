@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { X, Star, MapPin, MessageCircle, Plus, User, Edit2 } from 'lucide-react';
+import { X, Star, MapPin, MessageCircle, Plus, User, Edit2, Check } from 'lucide-react';
 import ReviewForm from './ReviewForm';
 import { USERS } from './UserSelector';
 import { 
   getReviewsForRestaurant, 
   getUserReviewForRestaurant, 
-  saveReview 
+  saveReview,
+  updateRestaurant
 } from '../firebase/firestore';
 
-const RestaurantDetail = ({ restaurant, onClose, currentUser }) => {
+const RestaurantDetail = ({ restaurant, onClose, currentUser, onToast }) => {
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviews, setReviews] = useState([]);
   const [userReview, setUserReview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editingTags, setEditingTags] = useState(false);
+  const [tags, setTags] = useState(restaurant.tags || []);
+  const [tagInput, setTagInput] = useState('');
 
   useEffect(() => {
     if (restaurant?.id && currentUser?.id) {
@@ -56,14 +60,46 @@ const RestaurantDetail = ({ restaurant, onClose, currentUser }) => {
       await saveReview(restaurant.id, currentUser.id, reviewData);
       await loadReviews(); // Reload reviews
       setShowReviewForm(false);
+      onToast?.('Review saved successfully!', 'success');
     } catch (error) {
       console.error('Error saving review:', error);
-      alert('Failed to save review. Please try again.');
+      onToast?.('Failed to save review. Please try again.', 'error');
     }
   };
 
   const handleEditReview = () => {
     setShowReviewForm(true);
+  };
+
+  const handleAddTag = () => {
+    const tag = tagInput.trim();
+    if (tag && !tags.includes(tag)) {
+      setTags([...tags, tag]);
+      setTagInput('');
+    }
+  };
+
+  const handleRemoveTag = (index) => {
+    setTags(tags.filter((_, i) => i !== index));
+  };
+
+  const handleSaveTags = async () => {
+    try {
+      // Send tags as array, or don't include the field if empty
+      const updateData = tags.length > 0 
+        ? { tags } 
+        : { tags: [] }; // Always send tags, even if empty
+      
+      await updateRestaurant(restaurant.id, updateData);
+      setEditingTags(false);
+      onToast?.('Tags updated successfully!', 'success');
+      
+      // Update the local restaurant object to reflect changes immediately
+      restaurant.tags = tags;
+    } catch (error) {
+      console.error('Error saving tags:', error);
+      onToast?.('Failed to save tags. Please try again.', 'error');
+    }
   };
 
   return (
@@ -90,18 +126,96 @@ const RestaurantDetail = ({ restaurant, onClose, currentUser }) => {
               <MapPin className="w-4 h-4" />
               <span className="text-sm">{restaurant.address}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
-                {restaurant.cuisine}
-              </span>
-              {reviews.length > 0 && (
-                <div className="flex items-center gap-1">
-                  <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                  <span className="font-semibold">{avgRating}</span>
-                  <span className="text-gray-500 text-sm">({reviews.length})</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {!editingTags ? (
+                <>
+                  {tags && tags.length > 0 ? (
+                    tags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium"
+                      >
+                        {tag}
+                      </span>
+                    ))
+                  ) : null}
+                  <button
+                    onClick={() => setEditingTags(true)}
+                    className="px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-sm font-medium hover:bg-gray-300 transition flex items-center gap-1"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                    Edit Tags
+                  </button>
+                </>
+              ) : (
+                <div className="w-full space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddTag();
+                        }
+                      }}
+                      placeholder="Add tag..."
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-sm"
+                    />
+                    <button
+                      onClick={handleAddTag}
+                      className="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition text-sm"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map((tag, index) => (
+                        <div
+                          key={index}
+                          className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium flex items-center gap-2"
+                        >
+                          {tag}
+                          <button
+                            onClick={() => handleRemoveTag(index)}
+                            className="hover:text-red-600 font-bold text-xs"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveTags}
+                      className="flex-1 px-3 py-2 bg-primary text-white rounded-lg font-medium hover:bg-indigo-700 transition text-sm flex items-center justify-center gap-1"
+                    >
+                      <Check className="w-4 h-4" />
+                      Save Tags
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingTags(false);
+                        setTags(restaurant.tags || []);
+                        setTagInput('');
+                      }}
+                      className="flex-1 px-3 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
+            {reviews.length > 0 && (
+              <div className="flex items-center gap-1 mt-2">
+                <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                <span className="font-semibold">{avgRating}</span>
+              </div>
+            )}
           </div>
           <button
             onClick={onClose}

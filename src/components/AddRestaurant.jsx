@@ -8,14 +8,15 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
   const [formData, setFormData] = useState({
     name: '',
     address: '',
-    cuisine: '',
+    tags: [],
+    tagInput: '', // temporary field for input
     placeId: null // Add placeId to form data
   });
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [error, setError] = useState('');
-  const cuisineInputRef = useRef(null);
+  const tagInputRef = useRef(null);
   const nameInputRef = useRef(null);
   const addressInputRef = useRef(null);
 
@@ -25,7 +26,8 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
       setFormData({
         name: prefillData.name || '',
         address: prefillData.address || '',
-        cuisine: '',
+        tags: prefillData.tags || [],
+        tagInput: '',
         placeId: prefillData.placeId || null // Store placeId from Google Places
       });
       setSelectedLocation({
@@ -79,8 +81,8 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
     e.preventDefault();
     setError('');
 
-    if (!formData.name || !formData.cuisine) {
-      setError('Please fill in all required fields');
+    if (!formData.name) {
+      setError('Please enter restaurant name');
       return;
     }
 
@@ -93,7 +95,7 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
       // Don't include 'id' here - Firestore will generate it
       name: formData.name,
       address: mode === 'search' ? formData.address : `${selectedLocation.lat.toFixed(6)}, ${selectedLocation.lng.toFixed(6)}`,
-      cuisine: formData.cuisine,
+      tags: formData.tags.length > 0 ? formData.tags : undefined, // Optional field
       lng: selectedLocation.lng,
       lat: selectedLocation.lat,
       placeId: formData.placeId, // Include placeId in the restaurant data
@@ -103,7 +105,7 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
     onAdd(newRestaurant);
     
     // Reset form
-    setFormData({ name: '', address: '', cuisine: '', placeId: null });
+    setFormData({ name: '', address: '', tags: [], tagInput: '', placeId: null });
     setSelectedLocation(null);
     onClose();
   };
@@ -247,23 +249,82 @@ const AddRestaurant = ({ isOpen, onClose, onAdd, onEnableDropPin, droppedPin, pr
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Cuisine Type *
+              Tags (Optional)
             </label>
-            <input
-              ref={cuisineInputRef}
-              type="text"
-              required
-              value={formData.cuisine}
-              onChange={(e) => setFormData({ ...formData, cuisine: e.target.value })}
-              onFocus={(e) => {
-                // Scroll input into view when keyboard appears
-                setTimeout(() => {
-                  e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 300);
-              }}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-lg"
-              placeholder="e.g., Italian, Mexican, Asian"
-            />
+            <div className="space-y-2">
+              {/* Tag Input */}
+              <div className="flex gap-2">
+                <input
+                  ref={tagInputRef}
+                  type="text"
+                  value={formData.tagInput}
+                  onChange={(e) => setFormData({ ...formData, tagInput: e.target.value })}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const tag = formData.tagInput.trim();
+                      if (tag && !formData.tags.includes(tag)) {
+                        setFormData({
+                          ...formData,
+                          tags: [...formData.tags, tag],
+                          tagInput: ''
+                        });
+                      }
+                    }
+                  }}
+                  onFocus={(e) => {
+                    // Scroll input into view when keyboard appears
+                    setTimeout(() => {
+                      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 300);
+                  }}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none text-lg"
+                  placeholder="Add tag (press Enter)"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const tag = formData.tagInput.trim();
+                    if (tag && !formData.tags.includes(tag)) {
+                      setFormData({
+                        ...formData,
+                        tags: [...formData.tags, tag],
+                        tagInput: ''
+                      });
+                    }
+                  }}
+                  className="px-4 py-3 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition"
+                >
+                  Add
+                </button>
+              </div>
+
+              {/* Display Tags */}
+              {formData.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {formData.tags.map((tag, index) => (
+                    <div
+                      key={index}
+                      className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium flex items-center gap-2"
+                    >
+                      {tag}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData({
+                            ...formData,
+                            tags: formData.tags.filter((_, i) => i !== index)
+                          });
+                        }}
+                        className="hover:text-red-600 font-bold"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <button
