@@ -1,194 +1,180 @@
-// Firestore service for restaurant/favorites operations
-import { 
-  collection, 
-  doc, 
-  getDocs, 
-  getDoc,
-  addDoc, 
-  updateDoc, 
-  query, 
+import {
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
   where,
   serverTimestamp,
-  orderBy
 } from 'firebase/firestore';
 import { db } from './config';
 
-const RESTAURANTS_COLLECTION = 'restaurants';
-const REVIEWS_COLLECTION = 'reviews';
-
-// ==================== RESTAURANTS ====================
-
 /**
- * Get all non-deleted restaurants
+ * Add a new restaurant to Firestore
+ * @param {Object} restaurantData - Restaurant data object
+ * @returns {Promise<string>} - Document ID
  */
-export const getAllRestaurants = async () => {
+export async function addRestaurant(restaurantData) {
   try {
-    // Get all restaurants (simpler query, no compound index needed)
-    const snapshot = await getDocs(collection(db, RESTAURANTS_COLLECTION));
-    const restaurants = snapshot.docs
-      .map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
-      .filter(r => r.deleted !== true); // Filter out deleted ones in memory
-    
-    // Sort by createdAt in memory
-    return restaurants.sort((a, b) => {
-      const timeA = a.createdAt?.toMillis?.() || 0;
-      const timeB = b.createdAt?.toMillis?.() || 0;
-      return timeB - timeA; // Descending order
-    });
-  } catch (error) {
-    console.error('Error getting restaurants:', error);
-    console.error('Error details:', error.message);
-    return [];
-  }
-};
+    // Filter out undefined values to prevent Firestore errors
+    const filteredData = Object.entries(restaurantData)
+      .filter(([_, value]) => value !== undefined)
+      .reduce((obj, [key, value]) => {
+        obj[key] = value;
+        return obj;
+      }, {});
 
-/**
- * Check if restaurant with placeId already exists
- */
-export const getRestaurantByPlaceId = async (placeId) => {
-  try {
-    const q = query(
-      collection(db, RESTAURANTS_COLLECTION),
-      where('placeId', '==', placeId)
-    );
-    const snapshot = await getDocs(q);
-    
-    if (snapshot.empty) return null;
-    
-    // Filter out deleted ones in memory (to avoid composite index)
-    const nonDeletedDocs = snapshot.docs.filter(doc => doc.data().deleted !== true);
-    
-    if (nonDeletedDocs.length === 0) return null;
-    
-    return { id: nonDeletedDocs[0].id, ...nonDeletedDocs[0].data() };
-  } catch (error) {
-    console.error('Error checking restaurant:', error);
-    console.error('Error details:', error.message);
-    return null;
-  }
-};
-
-/**
- * Add restaurant to favorites
- */
-export const addRestaurant = async (restaurantData, userId) => {
-  try {
-    const docRef = await addDoc(collection(db, RESTAURANTS_COLLECTION), {
-      ...restaurantData,
-      userId,
-      deleted: false,
+    const docRef = await addDoc(collection(db, 'restaurants'), {
+      ...filteredData,
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
     });
-    return { id: docRef.id, ...restaurantData, userId, deleted: false };
+    return docRef.id;
   } catch (error) {
     console.error('Error adding restaurant:', error);
     throw error;
   }
-};
+}
 
 /**
- * Soft delete restaurant (mark as deleted)
+ * Update restaurant fields
+ * @param {string} restaurantId - Restaurant document ID
+ * @param {Object} updates - Fields to update
+ * @returns {Promise<void>}
  */
-export const deleteRestaurant = async (restaurantId) => {
+export async function updateRestaurant(restaurantId, updates) {
   try {
-    console.log('Attempting to delete restaurant with ID:', restaurantId);
-    console.log('ID type:', typeof restaurantId);
-    console.log('ID value:', JSON.stringify(restaurantId));
-    
-    if (!restaurantId || typeof restaurantId !== 'string') {
-      throw new Error(`Invalid restaurant ID: ${restaurantId}. Expected a string.`);
-    }
-    
-    const docRef = doc(db, RESTAURANTS_COLLECTION, restaurantId);
+    // Filter out undefined/null values but keep empty arrays
+    const filteredUpdates = Object.entries(updates)
+      .filter(([_, value]) => value !== undefined && value !== null)
+      .reduce((obj, [key, value]) => {
+        obj[key] = value;
+        return obj;
+      }, {});
+
+    console.log('Updating restaurant with:', filteredUpdates);
+
+    const docRef = doc(db, 'restaurants', restaurantId);
+    await updateDoc(docRef, {
+      ...filteredUpdates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Error updating restaurant:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get all restaurants for a user
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} - Array of restaurant documents
+ */
+export async function getRestaurants(userId) {
+  try {
+    const q = query(
+      collection(db, 'restaurants'),
+      where('addedBy', '==', userId)
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+  } catch (error) {
+    console.error('Error getting restaurants:', error);
+    throw error;
+  }
+}
+
+/**
+ * Soft delete a restaurant (mark as deleted)
+ * @param {string} restaurantId - Restaurant document ID
+ * @returns {Promise<void>}
+ */
+export async function deleteRestaurant(restaurantId) {
+  try {
+    const docRef = doc(db, 'restaurants', restaurantId);
     await updateDoc(docRef, {
       deleted: true,
       deletedAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
     });
-    console.log('Successfully marked restaurant as deleted');
-    return true;
   } catch (error) {
     console.error('Error deleting restaurant:', error);
-    console.error('Error code:', error.code);
-    console.error('Error message:', error.message);
     throw error;
   }
-};
-
-// ==================== REVIEWS ====================
+}
 
 /**
- * Get all reviews for a restaurant
+ * Add or update a review for a restaurant
+ * @param {Object} reviewData - Review data object
+ * @returns {Promise<void>}
  */
-export const getReviewsForRestaurant = async (restaurantId) => {
+export async function addReview(reviewData) {
+  try {
+    const filteredData = Object.entries(reviewData)
+      .filter(([_, value]) => value !== undefined)
+      .reduce((obj, [key, value]) => {
+        obj[key] = value;
+        return obj;
+      }, {});
+
+    const docRef = await addDoc(collection(db, 'reviews'), {
+      ...filteredData,
+      createdAt: serverTimestamp(),
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error('Error adding review:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get reviews for a restaurant
+ * @param {string} restaurantId - Restaurant document ID
+ * @returns {Promise<Array>} - Array of review documents
+ */
+export async function getReviews(restaurantId) {
   try {
     const q = query(
-      collection(db, REVIEWS_COLLECTION),
-      where('restaurantId', '==', restaurantId),
-      orderBy('createdAt', 'desc')
+      collection(db, 'reviews'),
+      where('restaurantId', '==', restaurantId)
     );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map((doc) => ({
       id: doc.id,
-      ...doc.data()
+      ...doc.data(),
     }));
   } catch (error) {
     console.error('Error getting reviews:', error);
-    return [];
-  }
-};
-
-/**
- * Get user's review for a specific restaurant
- */
-export const getUserReviewForRestaurant = async (restaurantId, userId) => {
-  try {
-    const q = query(
-      collection(db, REVIEWS_COLLECTION),
-      where('restaurantId', '==', restaurantId),
-      where('userId', '==', userId)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.empty ? null : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-  } catch (error) {
-    console.error('Error getting user review:', error);
-    return null;
-  }
-};
-
-/**
- * Add or update review
- */
-export const saveReview = async (restaurantId, userId, reviewData) => {
-  try {
-    // Check if user already has a review
-    const existingReview = await getUserReviewForRestaurant(restaurantId, userId);
-    
-    if (existingReview) {
-      // Update existing review
-      const docRef = doc(db, REVIEWS_COLLECTION, existingReview.id);
-      await updateDoc(docRef, {
-        ...reviewData,
-        updatedAt: serverTimestamp()
-      });
-      return { id: existingReview.id, ...reviewData, userId, restaurantId };
-    } else {
-      // Create new review
-      const docRef = await addDoc(collection(db, REVIEWS_COLLECTION), {
-        restaurantId,
-        userId,
-        ...reviewData,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-      return { id: docRef.id, restaurantId, userId, ...reviewData };
-    }
-  } catch (error) {
-    console.error('Error saving review:', error);
     throw error;
   }
-};
+}
+
+/**
+ * Update a review
+ * @param {string} reviewId - Review document ID
+ * @param {Object} updates - Fields to update
+ * @returns {Promise<void>}
+ */
+export async function updateReview(reviewId, updates) {
+  try {
+    const filteredUpdates = Object.entries(updates)
+      .filter(([_, value]) => value !== undefined && value !== null)
+      .reduce((obj, [key, value]) => {
+        obj[key] = value;
+        return obj;
+      }, {});
+
+    const docRef = doc(db, 'reviews', reviewId);
+    await updateDoc(docRef, {
+      ...filteredUpdates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Error updating review:', error);
+    throw error;
+  }
+}
