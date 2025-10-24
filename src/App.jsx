@@ -7,6 +7,13 @@ import LoginScreen from './components/LoginScreen';
 import Toast from './components/Toast';
 import ConfirmDialog from './components/ConfirmDialog';
 import { getUserByEmail, USERS } from './components/UserSelector';
+import BottomTabBar from './components/Navigation/BottomTabBar';
+import SideDrawer from './components/Navigation/SideDrawer';
+import Header from './components/Navigation/Header';
+import MapScreen from './components/Screens/MapScreen';
+import ChatScreen from './components/Screens/ChatScreen';
+import NotesScreen from './components/Screens/NotesScreen';
+import GamesScreen from './components/Screens/GamesScreen';
 import { 
   getAllRestaurants, 
   addRestaurant, 
@@ -29,6 +36,8 @@ function App() {
   const [prefillData, setPrefillData] = useState(null);
   const [toast, setToast] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [activeTab, setActiveTab] = useState('map');
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Check Firebase authentication on mount
   useEffect(() => {
@@ -195,6 +204,120 @@ function App() {
     }
   };
 
+  // Get screen title for header
+  const getScreenTitle = () => {
+    const titles = {
+      map: 'Restaurants',
+      chat: 'Chat',
+      notes: 'Notes',
+      games: 'Games'
+    };
+    return titles[activeTab] || 'Restaurants';
+  };
+
+  // Render the appropriate screen based on active tab
+  const renderScreen = () => {
+    // Build restaurant list for map screen
+    const restaurantListItems = restaurants.map((restaurant) => {
+      const restaurantUser = USERS.find(u => u.id === restaurant.userId);
+      return (
+        <div
+          key={restaurant.id}
+          className="w-full bg-gray-50 rounded-lg p-4 transition relative"
+        >
+          <div 
+            onClick={() => {
+              handleMarkerClick(restaurant);
+              setShowListView(false);
+            }}
+            className="cursor-pointer"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <h3 className="font-semibold text-gray-800 text-lg flex-1">
+                {restaurant.name}
+              </h3>
+              {restaurantUser && (
+                <div 
+                  className="flex items-center gap-1 px-2 py-1 rounded-full text-white text-xs"
+                  style={{ backgroundColor: restaurantUser.color }}
+                  title={`Added by ${restaurantUser.name}`}
+                >
+                  <User size={12} />
+                  <span>{restaurantUser.name}</span>
+                </div>
+              )}
+            </div>
+            <p className="text-sm text-gray-600 mb-2">{restaurant.address}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              {restaurant.tags && restaurant.tags.length > 0 ? (
+                restaurant.tags.map((tag, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium"
+                  >
+                    {tag}
+                  </span>
+                ))
+              ) : null}
+            </div>
+          </div>
+          
+          {/* Remove button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmDialog({
+                title: 'Remove from Favorites?',
+                message: `Are you sure you want to remove "${restaurant.name}" from your favorites?`,
+                onConfirm: () => {
+                  handleRemoveRestaurant(restaurant.id);
+                  setConfirmDialog(null);
+                },
+                onCancel: () => setConfirmDialog(null),
+                confirmText: 'Remove',
+                cancelText: 'Cancel',
+                isDangerous: true
+              });
+            }}
+            className="absolute bottom-4 right-4 p-2 text-red-500 hover:bg-red-50 rounded-full transition"
+            title="Remove from favorites"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      );
+    });
+
+    switch (activeTab) {
+      case 'map':
+        return (
+          <MapScreen
+            restaurants={restaurants}
+            selectedRestaurant={selectedRestaurant}
+            dropPinMode={dropPinMode}
+            onMapClick={handleMapClick}
+            onMarkerClick={handleMarkerClick}
+            onFavorite={handleFavorite}
+            onAutoFill={handleAutoFill}
+            onCheckIfInFavorites={handleCheckIfInFavorites}
+            showListView={showListView}
+            onListViewToggle={() => setShowListView(!showListView)}
+            restaurantList={restaurantListItems}
+            onRemoveRestaurant={handleRemoveRestaurant}
+            currentUser={currentUser}
+          />
+        );
+      case 'chat':
+        return <ChatScreen />;
+      case 'notes':
+        return <NotesScreen />;
+      case 'games':
+        return <GamesScreen />;
+      default:
+        return <MapScreen />;
+    }
+  };
+
   // Show loading state while checking authentication
   if (authLoading) {
     return (
@@ -225,178 +348,101 @@ function App() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden">
-      {/* Map */}
-      <Map 
-        restaurants={restaurants} 
-        onMarkerClick={handleMarkerClick}
-        selectedRestaurant={selectedRestaurant}
-        dropPinMode={dropPinMode}
-        onMapClick={handleMapClick}
-        onFavorite={handleFavorite}
-        onAutoFill={handleAutoFill}
-        onCheckIfInFavorites={handleCheckIfInFavorites}
-      />
-
-      {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6 z-40">
-        {/* List View Button */}
-        <button
-          onClick={() => setShowListView(!showListView)}
-          className="w-14 h-14 bg-white text-gray-700 rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center active:scale-95"
-        >
-          <List className="w-6 h-6" />
-        </button>
-      </div>
-
-      {/* Logout Button */}
-      <button
-        onClick={handleLogout}
-        className="fixed top-4 right-4 z-40 flex items-center gap-2 px-4 py-2 bg-white text-red-600 rounded-full shadow-lg hover:bg-red-50 transition-all active:scale-95"
-        title="Logout"
-      >
-        <LogOut className="w-4 h-4" />
-        <span className="text-sm font-medium">Logout</span>
-      </button>
-
-      {/* List View Overlay */}
-      {showListView && (
-        <div className="fixed inset-0 z-40 bg-black bg-opacity-50 flex items-end">
-          <div className="bg-white w-full rounded-t-3xl shadow-2xl max-h-[70vh] flex flex-col animate-slideUp">
-            <div className="flex justify-center pt-3 pb-2">
-              <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
-            </div>
-            
-            <div className="px-6 py-4 border-b">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-800">
-                  Restaurants ({restaurants.length})
-                </h2>
-                <button
-                  onClick={() => setShowListView(false)}
-                  className="text-primary font-semibold"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-            
-            <div className="overflow-y-auto flex-1 px-6 py-4">
-              <div className="space-y-3">
-                {restaurants.map((restaurant) => {
-                  const restaurantUser = USERS.find(u => u.id === restaurant.userId);
-                  return (
-                    <div
-                      key={restaurant.id}
-                      className="w-full bg-gray-50 rounded-lg p-4 transition relative"
-                    >
-                      <div 
-                        onClick={() => {
-                          handleMarkerClick(restaurant);
-                          setShowListView(false);
-                        }}
-                        className="cursor-pointer"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <h3 className="font-semibold text-gray-800 text-lg flex-1">
-                            {restaurant.name}
-                          </h3>
-                          {restaurantUser && (
-                            <div 
-                              className="flex items-center gap-1 px-2 py-1 rounded-full text-white text-xs"
-                              style={{ backgroundColor: restaurantUser.color }}
-                              title={`Added by ${restaurantUser.name}`}
-                            >
-                              <User size={12} />
-                              <span>{restaurantUser.name}</span>
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-600 mb-2">{restaurant.address}</p>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {restaurant.tags && restaurant.tags.length > 0 ? (
-                            restaurant.tags.map((tag, idx) => (
-                              <span
-                                key={idx}
-                                className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-medium"
-                              >
-                                {tag}
-                              </span>
-                            ))
-                          ) : null}
-                        </div>
-                      </div>
-                      
-                      {/* Remove button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmDialog({
-                            title: 'Remove from Favorites?',
-                            message: `Are you sure you want to remove "${restaurant.name}" from your favorites?`,
-                            onConfirm: () => {
-                              handleRemoveRestaurant(restaurant.id);
-                              setConfirmDialog(null);
-                            },
-                            onCancel: () => setConfirmDialog(null),
-                            confirmText: 'Remove',
-                            cancelText: 'Cancel',
-                            isDangerous: true
-                          });
-                        }}
-                        className="absolute bottom-4 right-4 p-2 text-red-500 hover:bg-red-50 rounded-full transition"
-                        title="Remove from favorites"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+    <div className="h-screen bg-gray-50 flex flex-col max-w-md mx-auto relative">
+      {/* Auth Loading State */}
+      {authLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
           </div>
         </div>
       )}
 
-      {/* Modals */}
-      <AddRestaurant 
-        isOpen={showAddModal}
-        onClose={handleCloseAddModal}
-        onAdd={handleAddRestaurant}
-        onEnableDropPin={handleEnableDropPin}
-        droppedPin={droppedPin}
-        prefillData={prefillData}
-      />
+      {/* Login Screen */}
+      {!authUser ? (
+        <LoginScreen onLoginSuccess={(user) => setAuthUser(user)} />
+      ) : (
+        <>
+          {/* Header with Menu */}
+          <Header
+            title={getScreenTitle()}
+            onMenuClick={() => setDrawerOpen(true)}
+            currentUser={currentUser}
+          />
 
-      {selectedRestaurant && (
-        <RestaurantDetail
-          restaurant={selectedRestaurant}
-          onClose={handleCloseDetail}
-          currentUser={currentUser}
-          onToast={showToast}
-        />
-      )}
+          {/* Main Content Area - All screens here */}
+          <div className="flex-1 overflow-hidden">
+            {loading ? (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading restaurants...</p>
+                </div>
+              </div>
+            ) : (
+              renderScreen()
+            )}
+          </div>
 
-      {/* Toast Notifications */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
+          {/* Bottom Tab Navigation */}
+          <BottomTabBar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            unreadChat={0}
+            unreadNotes={0}
+          />
 
-      {/* Confirm Dialog */}
-      {confirmDialog && (
-        <ConfirmDialog
-          title={confirmDialog.title}
-          message={confirmDialog.message}
-          onConfirm={confirmDialog.onConfirm}
-          onCancel={confirmDialog.onCancel}
-          confirmText={confirmDialog.confirmText}
-          cancelText={confirmDialog.cancelText}
-          isDangerous={confirmDialog.isDangerous}
-        />
+          {/* Side Drawer Menu */}
+          <SideDrawer
+            isOpen={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+          />
+
+          {/* Restaurant Detail Modal */}
+          {selectedRestaurant && (
+            <RestaurantDetail
+              restaurant={selectedRestaurant}
+              onClose={handleCloseDetail}
+              currentUser={currentUser}
+              onToast={showToast}
+            />
+          )}
+
+          {/* Add Restaurant Modal */}
+          <AddRestaurant 
+            isOpen={showAddModal}
+            onClose={handleCloseAddModal}
+            onAdd={handleAddRestaurant}
+            onEnableDropPin={handleEnableDropPin}
+            droppedPin={droppedPin}
+            prefillData={prefillData}
+          />
+
+          {/* Toast Notifications */}
+          {toast && (
+            <Toast
+              message={toast.message}
+              type={toast.type}
+              onClose={() => setToast(null)}
+            />
+          )}
+
+          {/* Confirm Dialog */}
+          {confirmDialog && (
+            <ConfirmDialog
+              title={confirmDialog.title}
+              message={confirmDialog.message}
+              onConfirm={confirmDialog.onConfirm}
+              onCancel={confirmDialog.onCancel}
+              confirmText={confirmDialog.confirmText}
+              cancelText={confirmDialog.cancelText}
+              isDangerous={confirmDialog.isDangerous}
+            />
+          )}
+        </>
       )}
     </div>
   );
